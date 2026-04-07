@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>네트워크 업무 분류기</title>
+<meta name="description" content="접수된 네트워크 업무가 유지보수, 프로젝트, 운영 중 어디에 해당하는지 19개 질문으로 판단합니다.">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Noto Sans KR', sans-serif; background: #f8fafc; color: #1e293b; }
+  @keyframes fadeUp { from { opacity:0; transform:translateY(20px); } to { opacity:1; transform:translateY(0); } }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script>
+const e = React.createElement, { useState } = React;
+
+const CATEGORIES = [
+  { id: "basic", label: "기본 정보", icon: "📋" },
+  { id: "technical", label: "기술 범위", icon: "⚙️" },
+  { id: "resource", label: "자원·비용", icon: "💰" },
+  { id: "process", label: "프로세스·절차", icon: "📐" },
+  { id: "impact", label: "영향도·리스크", icon: "⚡" },
+];
+
+const QUESTIONS = [
+  { id:"purpose", category:"basic", text:"이 작업의 핵심 목적은 무엇인가요?", icon:"🎯", options:[
+    { label:"장애 복구 또는 서비스 정상화", score:{m:3,p:0,o:0} },
+    { label:"성능 저하 예방 또는 사전 점검", score:{m:3,p:0,o:0} },
+    { label:"새로운 인프라·기능·서비스 구축", score:{m:0,p:3,o:0} },
+    { label:"기존 구조의 개선·최적화·재설계", score:{m:0,p:3,o:0} },
+    { label:"일상적 관리·처리 (계정, IP, 포트 등)", score:{m:0,p:0,o:3} },
+  ]},
+  { id:"trigger", category:"basic", text:"이 작업이 발생한 원인(트리거)은?", icon:"🔔", options:[
+    { label:"장애·알림 발생으로 인한 긴급 대응", score:{m:3,p:0,o:0} },
+    { label:"정기 점검 일정에 따른 예정 작업", score:{m:2,p:0,o:1} },
+    { label:"고객 또는 경영진의 신규 요구사항", score:{m:0,p:3,o:0} },
+    { label:"사용자 요청 (계정, 접근권한, IP 등)", score:{m:0,p:0,o:3} },
+  ]},
+  { id:"recurrence", category:"basic", text:"이 작업의 발생 빈도는?", icon:"🔁", options:[
+    { label:"비정기적 (장애·이슈 시에만)", score:{m:3,p:0,o:0} },
+    { label:"1회성 (완료 후 종료)", score:{m:0,p:3,o:0} },
+    { label:"주기적 반복 (일/주/월 단위)", score:{m:0,p:0,o:3} },
+    { label:"수시 발생 (요청 기반)", score:{m:0,p:0,o:3} },
+  ]},
+  { id:"domain", category:"technical", text:"작업 대상 기술 영역은?", icon:"🌐", options:[
+    { label:"스위칭 (L2 VLAN, STP, 포트 등)", score:{m:1,p:1,o:1} },
+    { label:"라우팅 (OSPF, BGP, Static 등)", score:{m:1,p:1,o:0} },
+    { label:"무선 (Wi-Fi AP, WLC, SSID 등)", score:{m:1,p:1,o:1} },
+    { label:"보안 (방화벽, VPN, NAC, IPS 등)", score:{m:1,p:1,o:1} },
+    { label:"복합 영역 / 전체 인프라", score:{m:0,p:2,o:0} },
+  ]},
+  { id:"config_type", category:"technical", text:"설정 변경의 성격은?", icon:"🔧", options:[
+    { label:"기존 설정의 수정·보완 (ACL, VLAN 추가 등)", score:{m:3,p:0,o:0} },
+    { label:"기존 설정 그대로 유지 (모니터링, 점검)", score:{m:2,p:0,o:1} },
+    { label:"새로운 설계 기반의 전면 설정", score:{m:0,p:3,o:0} },
+    { label:"단순 활성화/비활성화 (포트, 계정 등)", score:{m:0,p:0,o:3} },
+  ]},
+  { id:"topology", category:"technical", text:"네트워크 토폴로지에 변화가 있나요?", icon:"🗺️", options:[
+    { label:"변화 없음 (기존 구조 유지)", score:{m:2,p:0,o:1} },
+    { label:"소규모 변경 (링크 추가, 경로 변경 등)", score:{m:2,p:1,o:0} },
+    { label:"대규모 변경 (이중화 구조, 계층 변경 등)", score:{m:0,p:3,o:0} },
+  ]},
+  { id:"newequip", category:"technical", text:"신규 장비 도입이 수반되나요?", icon:"📦", options:[
+    { label:"아니오, 기존 장비만 사용", score:{m:2,p:0,o:1} },
+    { label:"동일 모델로 교체 (RMA, EOS 대응)", score:{m:3,p:0,o:0} },
+    { label:"신규 장비 추가 도입", score:{m:0,p:3,o:0} },
+    { label:"다른 벤더·모델로 전환", score:{m:0,p:3,o:0} },
+  ]},
+  { id:"firmware", category:"technical", text:"소프트웨어/펌웨어 작업이 포함되나요?", icon:"💾", options:[
+    { label:"패치·보안 업데이트 적용", score:{m:3,p:0,o:0} },
+    { label:"메이저 버전 업그레이드", score:{m:1,p:2,o:0} },
+    { label:"새로운 솔루션 소프트웨어 설치", score:{m:0,p:3,o:0} },
+    { label:"해당 없음", score:{m:0,p:0,o:1} },
+  ]},
+  { id:"duration", category:"resource", text:"예상 소요 시간은?", icon:"⏱️", options:[
+    { label:"수 분 이내 (즉시 처리)", score:{m:0,p:0,o:3} },
+    { label:"수 시간 이내", score:{m:2,p:0,o:1} },
+    { label:"1일 ~ 수일", score:{m:1,p:2,o:0} },
+    { label:"1주 이상", score:{m:0,p:3,o:0} },
+  ]},
+  { id:"manpower", category:"resource", text:"투입 인력 규모는?", icon:"👥", options:[
+    { label:"담당 엔지니어 1인으로 충분", score:{m:2,p:0,o:2} },
+    { label:"2~3명 협업 필요", score:{m:1,p:2,o:0} },
+    { label:"다수 인원·여러 팀 협업 (PM 포함)", score:{m:0,p:3,o:0} },
+  ]},
+  { id:"cost", category:"resource", text:"추가 비용(구매·라이선스)이 발생하나요?", icon:"💰", options:[
+    { label:"없음 (기존 계약·자원 내 처리)", score:{m:2,p:0,o:2} },
+    { label:"소모품·부품 교체 비용 수준", score:{m:3,p:0,o:0} },
+    { label:"장비 구매·라이선스·외주 비용 발생", score:{m:0,p:3,o:0} },
+  ]},
+  { id:"design", category:"process", text:"별도 설계서·계획서가 필요한가요?", icon:"📝", options:[
+    { label:"불필요 (기존 절차·매뉴얼로 충분)", score:{m:2,p:0,o:1} },
+    { label:"간단한 작업 계획서 수준", score:{m:2,p:1,o:0} },
+    { label:"상세 설계서 (HLD/LLD) 필요", score:{m:0,p:3,o:0} },
+  ]},
+  { id:"approval", category:"process", text:"고객 승인·변경관리(CAB) 절차가 필요한가요?", icon:"✅", options:[
+    { label:"불필요 (일상 업무 범위)", score:{m:0,p:0,o:3} },
+    { label:"담당자 구두·메일 승인이면 충분", score:{m:3,p:0,o:0} },
+    { label:"공식 변경 요청서·CAB 승인 필요", score:{m:0,p:3,o:0} },
+  ]},
+  { id:"testing", category:"process", text:"별도 테스트·검증 절차가 필요한가요?", icon:"🧪", options:[
+    { label:"간단한 핑/연결 테스트로 충분", score:{m:2,p:0,o:1} },
+    { label:"서비스 영향도 확인 및 단위 테스트", score:{m:2,p:1,o:0} },
+    { label:"통합 테스트·PoC·파일럿 운영 필요", score:{m:0,p:3,o:0} },
+    { label:"테스트 불필요 (단순 조회·확인)", score:{m:0,p:0,o:3} },
+  ]},
+  { id:"documentation", category:"process", text:"산출물(문서)은 어느 수준이 필요한가요?", icon:"📄", options:[
+    { label:"작업 완료 보고 (메일·티켓 클로즈)", score:{m:2,p:0,o:2} },
+    { label:"장애 보고서(RCA) 또는 점검 리포트", score:{m:3,p:0,o:0} },
+    { label:"설계서·구성도·인수인계 문서 세트", score:{m:0,p:3,o:0} },
+  ]},
+  { id:"downtime", category:"impact", text:"서비스 중단(다운타임)이 예상되나요?", icon:"🚨", options:[
+    { label:"중단 없음 (무중단 작업)", score:{m:1,p:0,o:2} },
+    { label:"짧은 순단 (수 분 이내, 이중화 전환 등)", score:{m:3,p:0,o:0} },
+    { label:"계획된 다운타임 필요 (야간·주말 작업)", score:{m:1,p:2,o:0} },
+    { label:"장시간 중단 가능 (마이그레이션 등)", score:{m:0,p:3,o:0} },
+  ]},
+  { id:"revert", category:"impact", text:"작업 후 원복(Rollback)이 가능한가요?", icon:"🔄", options:[
+    { label:"즉시 원복 가능 (설정 복원)", score:{m:3,p:0,o:1} },
+    { label:"원복 가능하나 시간·절차 필요", score:{m:1,p:2,o:0} },
+    { label:"원복 불가 (물리적·구조적 변경)", score:{m:0,p:3,o:0} },
+    { label:"원복 의미 없음 (일회성 처리)", score:{m:0,p:0,o:2} },
+  ]},
+  { id:"scope", category:"impact", text:"영향 받는 사용자·시스템 규모는?", icon:"📐", options:[
+    { label:"특정 사용자 또는 단말 1~2건", score:{m:0,p:0,o:3} },
+    { label:"특정 부서·층·구역", score:{m:2,p:0,o:0} },
+    { label:"전사 또는 다수 사이트", score:{m:0,p:3,o:0} },
+  ]},
+  { id:"sla", category:"impact", text:"SLA 또는 계약 조건에 명시된 업무인가요?", icon:"📑", options:[
+    { label:"예, 유지보수 SLA 범위에 포함", score:{m:3,p:0,o:0} },
+    { label:"SLA에 없음 — 별도 협의 필요", score:{m:0,p:3,o:0} },
+    { label:"고객 자체 운영 업무로 분류", score:{m:0,p:0,o:3} },
+    { label:"확인 필요 (경계 모호)", score:{m:1,p:1,o:1} },
+  ]},
+];
+
+const RC = {
+  m: { label:"유지보수", sub:"Maintenance", color:"#0ea5e9", bg:"rgba(14,165,233,0.08)", border:"rgba(14,165,233,0.25)", icon:"🔧",
+    desc:"기존 인프라의 정상 상태를 유지·복구하는 업무입니다. 유지보수 계약 범위에 포함됩니다.",
+    examples:["장애 대응 및 복구","펌웨어/패치 업데이트","정기 점검","설정 백업·복원","소규모 구성 변경"] },
+  p: { label:"프로젝트", sub:"Project", color:"#f59e0b", bg:"rgba(245,158,11,0.08)", border:"rgba(245,158,11,0.25)", icon:"🚀",
+    desc:"새로운 가치 창출이나 구조 변경이 필요한 업무입니다. 별도 계약 및 추가 비용이 필요합니다.",
+    examples:["신규 장비 도입·구축","아키텍처 재설계","마이그레이션","신규 솔루션 도입","대규모 IP 체계 변경"] },
+  o: { label:"운영", sub:"Operations", color:"#10b981", bg:"rgba(16,185,129,0.08)", border:"rgba(16,185,129,0.25)", icon:"⚙️",
+    desc:"고객사 내부에서 수행해야 할 일상적·반복적 관리 업무입니다. 고객이 주체가 되어야 합니다.",
+    examples:["사용자 계정·권한 관리","IP 할당","포트 활성화/비활성화","현황 리포팅","내부 정책 수립"] },
+};
+
+function App() {
+  const [step, setStep] = useState(0);
+  const [answers, setAnswers] = useState([]);
+  const [sel, setSel] = useState(null);
+  const [taskName, setTaskName] = useState("");
+  const [showIntro, setShowIntro] = useState(true);
+  const [fadeIn, setFadeIn] = useState(true);
+  const [history, setHistory] = useState([]);
+
+  const done = step >= QUESTIONS.length;
+  const scores = answers.reduce((a,s) => ({m:a.m+s.m, p:a.p+s.p, o:a.o+s.o}), {m:0,p:0,o:0});
+  const total = scores.m + scores.p + scores.o || 1;
+  const winner = scores.m >= scores.p && scores.m >= scores.o ? "m" : scores.p >= scores.o ? "p" : "o";
+  const rc = RC[winner];
+
+  function pick(opt, i) {
+    setSel(i);
+    setTimeout(() => { setFadeIn(false); setTimeout(() => {
+      setAnswers([...answers, opt.score]); setStep(step+1); setSel(null); setFadeIn(true);
+    }, 250); }, 300);
+  }
+  function reset() {
+    if (taskName && done) setHistory([...history, {name:taskName, result:winner, scores:{...scores}}]);
+    setStep(0); setAnswers([]); setSel(null); setTaskName(""); setFadeIn(true);
+  }
+  function back() {
+    if (step > 0) { setFadeIn(false); setTimeout(() => {
+      setStep(step-1); setAnswers(answers.slice(0,-1)); setSel(null); setFadeIn(true);
+    }, 200); }
+  }
+
+  const s = (obj) => obj; // style passthrough
+
+  if (showIntro) return e('div', {style:s({minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",padding:20})},
+    e('div', {style:s({maxWidth:520,width:"100%",textAlign:"center"})},
+      e('div', {style:{fontSize:56,marginBottom:16}}, "🔀"),
+      e('h1', {style:{fontSize:26,fontWeight:800,color:"#1e293b",marginBottom:8,letterSpacing:"-0.02em"}}, "네트워크 업무 분류기"),
+      e('p', {style:{fontSize:14,color:"#64748b",marginBottom:32,lineHeight:1.7}},
+        "접수된 업무가 ", e('span',{style:{color:"#0ea5e9",fontWeight:700}},"유지보수"), ", ",
+        e('span',{style:{color:"#f59e0b",fontWeight:700}},"프로젝트"), ", ",
+        e('span',{style:{color:"#10b981",fontWeight:700}},"운영"), " 중 어디에 해당하는지",
+        e('br'), "5개 카테고리, 19개 질문으로 정밀 판단합니다."
+      ),
+      e('button', {onClick:()=>setShowIntro(false), style:{padding:"14px 48px",fontSize:16,fontWeight:700,color:"#fff",background:"linear-gradient(135deg,#0ea5e9,#6366f1)",border:"none",borderRadius:12,cursor:"pointer",boxShadow:"0 4px 24px rgba(99,102,241,0.3)"}}, "시작하기")
+    )
+  );
+
+  const q = !done ? QUESTIONS[step] : null;
+  const cat = q ? CATEGORIES.find(c=>c.id===q.category) : null;
+  const pct = (step / QUESTIONS.length) * 100;
+
+  return e('div', {style:{minHeight:"100vh",padding:"24px 16px",display:"flex",flexDirection:"column",alignItems:"center"}},
+    e('div', {style:{maxWidth:560,width:"100%",marginTop:8}},
+
+      // Header
+      e('div', {style:{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:24}},
+        e('h2', {style:{fontSize:18,fontWeight:800,color:"#1e293b",margin:0}}, "🔀 업무 분류기"),
+        !done && e('span', {style:{fontSize:13,color:"#64748b",fontWeight:600}}, (step+1)+" / "+QUESTIONS.length)
+      ),
+
+      // Task name
+      !done && step===0 && e('div', {style:{marginBottom:20}},
+        e('input', {type:"text", placeholder:"업무명을 입력하세요 (선택사항)", value:taskName,
+          onChange:ev=>setTaskName(ev.target.value),
+          style:{width:"100%",padding:"12px 16px",fontSize:14,border:"1px solid rgba(0,0,0,0.1)",borderRadius:10,background:"#fff",color:"#1e293b",outline:"none",boxSizing:"border-box",fontFamily:"inherit"}})
+      ),
+
+      // Progress
+      !done && e('div', {style:{marginBottom:28}},
+        e('div', {style:{display:"flex",gap:6,marginBottom:12,flexWrap:"wrap"}},
+          ...CATEGORIES.map(c => {
+            const cqs = QUESTIONS.filter(qq=>qq.category===c.id);
+            const last = QUESTIONS.indexOf(cqs[cqs.length-1]);
+            const isDone = step > last;
+            const isActive = c.id === q.category;
+            return e('span', {key:c.id, style:{fontSize:11,fontWeight:700,padding:"4px 10px",borderRadius:6,
+              background: isActive ? "#4f46e5" : isDone ? "#e0e7ff" : "rgba(0,0,0,0.04)",
+              color: isActive ? "#fff" : isDone ? "#4f46e5" : "#94a3b8",
+              transition:"all 0.3s"}}, c.icon+" "+c.label);
+          })
+        ),
+        e('div', {style:{width:"100%",height:6,borderRadius:3,background:"rgba(0,0,0,0.06)",overflow:"hidden"}},
+          e('div', {style:{width:pct+"%",height:"100%",borderRadius:3,background:"linear-gradient(90deg,#4f46e5,#0ea5e9,#10b981)",transition:"width 0.5s cubic-bezier(.4,0,.2,1)"}})
+        )
+      ),
+
+      // Question
+      !done && e('div', {style:{opacity:fadeIn?1:0,transform:fadeIn?"translateY(0)":"translateY(12px)",transition:"all 0.3s ease"}},
+        e('div', {style:{fontSize:11,fontWeight:700,color:"#4f46e5",letterSpacing:1,marginBottom:8}}, cat.icon+" "+cat.label),
+        e('div', {style:{fontSize:36,marginBottom:12}}, q.icon),
+        e('h3', {style:{fontSize:20,fontWeight:700,color:"#1e293b",marginBottom:24,lineHeight:1.5}}, q.text),
+        e('div', {style:{display:"flex",flexDirection:"column",gap:10}},
+          ...q.options.map((opt,i) => e('button', {key:i, onClick:()=>pick(opt,i),
+            onMouseOver:ev=>{if(sel!==i){ev.target.style.background="rgba(0,0,0,0.06)";ev.target.style.borderColor="rgba(0,0,0,0.12)";}},
+            onMouseOut:ev=>{if(sel!==i){ev.target.style.background="#fff";ev.target.style.borderColor="rgba(0,0,0,0.08)";}},
+            style:{padding:"16px 20px",fontSize:15,fontWeight:600,textAlign:"left",fontFamily:"inherit",lineHeight:1.5,borderRadius:12,cursor:"pointer",transition:"all 0.2s ease",
+              color: sel===i ? "#fff" : "#1e293b",
+              background: sel===i ? "linear-gradient(135deg,#6366f1,#0ea5e9)" : "#fff",
+              border: sel===i ? "1px solid rgba(99,102,241,0.5)" : "1px solid rgba(0,0,0,0.08)"}
+          }, opt.label))
+        ),
+        step > 0 && e('button', {onClick:back, style:{marginTop:20,padding:"8px 16px",fontSize:13,color:"#64748b",background:"none",border:"1px solid rgba(0,0,0,0.08)",borderRadius:8,cursor:"pointer",fontFamily:"inherit"}}, "← 이전 질문")
+      ),
+
+      // Result
+      done && e('div', {style:{animation:"fadeUp 0.5s ease"}},
+        taskName && e('div', {style:{fontSize:14,color:"#64748b",marginBottom:8,fontWeight:600}}, "📝 "+taskName),
+
+        e('div', {style:{padding:28,borderRadius:16,border:"1px solid "+rc.border,background:rc.bg,marginBottom:24}},
+          e('div', {style:{fontSize:42,marginBottom:8}}, rc.icon),
+          e('div', {style:{fontSize:28,fontWeight:800,color:rc.color,marginBottom:4}}, rc.label),
+          e('div', {style:{fontSize:13,fontWeight:600,color:"#64748b",marginBottom:16}}, rc.sub),
+          e('p', {style:{fontSize:14,color:"#1e293b",lineHeight:1.8,margin:0}}, rc.desc)
+        ),
+
+        // Score bars
+        e('div', {style:{padding:20,borderRadius:12,background:"#fff",border:"1px solid rgba(0,0,0,0.06)",marginBottom:24}},
+          e('div', {style:{fontSize:13,fontWeight:700,color:"#64748b",marginBottom:14,textTransform:"uppercase",letterSpacing:1}}, "분석 결과"),
+          ...["m","p","o"].map(t => {
+            const c = RC[t], v = scores[t], p = total>0?(v/total)*100:0;
+            return e('div', {key:t, style:{marginBottom:10}},
+              e('div', {style:{display:"flex",justifyContent:"space-between",marginBottom:4,fontSize:13,fontWeight:600,color:c.color}},
+                e('span',null,c.icon+" "+c.label), e('span',null,Math.round(p)+"%")),
+              e('div', {style:{width:"100%",height:10,borderRadius:5,background:"rgba(0,0,0,0.06)",overflow:"hidden"}},
+                e('div', {style:{width:p+"%",height:"100%",borderRadius:5,background:c.color,transition:"width 0.6s cubic-bezier(.4,0,.2,1)"}}))
+            );
+          })
+        ),
+
+        // Examples
+        e('div', {style:{padding:20,borderRadius:12,background:"#fff",border:"1px solid rgba(0,0,0,0.06)",marginBottom:24}},
+          e('div', {style:{fontSize:13,fontWeight:700,color:"#64748b",marginBottom:12,textTransform:"uppercase",letterSpacing:1}}, rc.label+" 업무 예시"),
+          ...rc.examples.map((ex,i) => e('div', {key:i, style:{padding:"8px 0",fontSize:14,color:"#1e293b",borderBottom:i<rc.examples.length-1?"1px solid rgba(0,0,0,0.04)":"none"}},
+            e('span',{style:{color:rc.color,marginRight:8}},"•"), ex))
+        ),
+
+        e('button', {onClick:reset, style:{width:"100%",padding:14,fontSize:15,fontWeight:700,color:"#fff",background:"linear-gradient(135deg,#6366f1,#0ea5e9)",border:"none",borderRadius:12,cursor:"pointer",fontFamily:"inherit"}}, "새 업무 분류하기"),
+
+        // History
+        history.length > 0 && e('div', {style:{marginTop:32,padding:20,borderRadius:12,background:"#fff",border:"1px solid rgba(0,0,0,0.06)"}},
+          e('div', {style:{fontSize:13,fontWeight:700,color:"#64748b",marginBottom:12,textTransform:"uppercase",letterSpacing:1}}, "이전 분류 기록"),
+          ...history.map((h,i) => {
+            const hc = RC[h.result];
+            return e('div', {key:i, style:{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 0",borderBottom:i<history.length-1?"1px solid rgba(0,0,0,0.04)":"none"}},
+              e('span',{style:{fontSize:14,color:"#1e293b"}}, h.name||("업무 #"+(i+1))),
+              e('span',{style:{fontSize:12,fontWeight:700,color:hc.color,background:hc.bg,padding:"4px 10px",borderRadius:6,border:"1px solid "+hc.border}}, hc.icon+" "+hc.label)
+            );
+          })
+        )
+      )
+    )
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(App));
+</script>
+</body>
+</html>
